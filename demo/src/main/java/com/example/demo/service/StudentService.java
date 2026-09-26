@@ -84,7 +84,7 @@ public class StudentService {
     }
 
 
-    public boolean deleteStudent(Long id) {
+    public void deleteStudent(Long id) {
 
         Student student = studentRepository
                 .findById(id)
@@ -92,8 +92,6 @@ public class StudentService {
                         new ResourceNotFoundException("Student with id " + id + " Not Found"));
 
         studentRepository.delete(student);
-
-        return true;
 
 //        if (!isStudent) {
 //            return false;

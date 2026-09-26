@@ -1,96 +1,154 @@
-package com.example.demo.controller;
+package com.example.demo.service;
 
 import com.example.demo.DTO.StudentRequestDTO;
 import com.example.demo.DTO.StudentResponseDTO;
 import com.example.demo.UPDATE_DTO.updateStudentRequestDTO;
 import com.example.demo.UPDATE_DTO.updateStudentResponseDTO;
-import com.example.demo.service.StudentService;
-import jakarta.validation.Valid;
-import org.springframework.http.HttpStatus;
-import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.*;
-
+import com.example.demo.entity.Student;
+import com.example.demo.exception.DuplicateResourceException;
+import com.example.demo.exception.ResourceNotFoundException;
+import com.example.demo.repository.StudentRepository;
+import org.springframework.stereotype.Service;
+import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Optional;
+//yaha buisness logic perform hoga we know normally pahle jaisa repository mein nhi dalenge
 
-import static org.springframework.http.ResponseEntity.status;
-//sabse pahle api ko sudhara alag alag end points likhne ki jrurat nhi hai
-@RestController
-@RequestMapping("/api/students")
-public class StudentController {
-    public StudentService studentService;
+@Service
+public class StudentController{
+    private StudentRepository studentRepository;
 
-    public StudentController(StudentService studentService) {
-        this.studentService = studentService;
+    public StudentController(StudentRepository studentRepository) {
+        this.studentRepository = studentRepository;
     }
 
-    @PostMapping// yeh create hai na eska mtlb  request kr rha toh request dto mein
-    public ResponseEntity<StudentResponseDTO> createStudent // student response dto mein na final result save hogaa
-            (@Valid @RequestBody StudentRequestDTO studentRequestDTO) {
-        StudentResponseDTO createStudent = studentService.createStudent(studentRequestDTO);
-        return ResponseEntity
-                .status(HttpStatus.CREATED)
-                .body(createStudent);
-    }
 
-    @GetMapping("/{id}")
-    public ResponseEntity<StudentResponseDTO> getStud(@PathVariable Long id) {
-        StudentResponseDTO studentResp = studentService.getStud(id);
-        // yeha tak kab ayega pahle controller se service then handler sab shi rhega tabhi ayega na return yak toh happy code hai
-        //yeh jo if-else statement hai controller ka kam nhi hai yeh esse htate jayenge sara direct return krenge wohi same kyuki shi rhega toh hi return krega na
-        // aur hmesa happy code likhenge ok wala else yeh sab nhi
-        return ResponseEntity.ok(studentResp);
-    }
+    public StudentResponseDTO createStudent(StudentRequestDTO studentRequestDTO) {
 
-    //eski jrurat nhi hai yeh if else exception  handler se ja rha hai
-//        if (studentResp == null) {
-//            return status(HttpStatus.NOT_FOUND)
-//                    .body(null);
-//        }
-//        return ResponseEntity
-//        .status(HttpStatus.OK)
-//                .body(studentResp);
-  //  }
-        @GetMapping// yaha kuch nhi mtlb hua na get All
-        public ResponseEntity<List<StudentResponseDTO>> getAllStudent () {
-            List<StudentResponseDTO> studentList = studentService.getAllStudent();
-            return ResponseEntity.ok(studentList);
-//yeh kr chuke hai khi aur file mein
-//            if (studentList == null) {
-//                return status(HttpStatus.NOT_FOUND)
-//                        .body(null);
-//            }
-//
-//            return status(HttpStatus.OK)
-//                    .body(studentList);
+        Student student = mapIntoStudent(studentRequestDTO); //Repository directly DTO nahi leta. Repository ko hamari Student Entity chahiye.yaha conversion hoga aur entry mein hi convert kr dengey then return ke time response mein
+        if (rollExists(student)) {
+            throw new DuplicateResourceException("Roll Number Already Exists: " + student.getRoll());
         }
-        @PutMapping
-        public ResponseEntity<updateStudentResponseDTO> studentUpdate (@PathVariable Long id, @RequestBody updateStudentRequestDTO updateStudentRequestDTO) {
 
-            updateStudentResponseDTO studentResp = studentService.updateStudent(id, updateStudentRequestDTO); // left side wala final result haina woh wohi save hoga response mein na
-            return ResponseEntity.ok(studentResp);
-        }
-//            if (studentResp == null) {
-//                return ResponseEntity
-//                        .status(HttpStatus.NOT_FOUND)
-//                        .body(null);
-//            }
-//
-//            return ResponseEntity
-//                    .status(HttpStatus.OK)
-//                    .body(studentResp);
-//        }
-
-    @DeleteMapping("/{id}")
-    public ResponseEntity<String> deleteStudent(@PathVariable Long id){
-
-                studentService.deleteStudent(id);
-                return ResponseEntity
-                        .status(HttpStatus.NO_CONTENT).build();
+        Student stud = studentRepository.save(student);
+        return mapToResponse(stud);
     }
-//        if (!isDeleted) {
-//            return ResponseEntity.notFound().build();
+
+
+    public StudentResponseDTO getStud(Long id) {
+        Student studResp = studentRepository
+                .findById(id)
+                .orElseThrow(() ->//clean architecuture milta toh thik nhi mila toh throw exception
+                        new ResourceNotFoundException("Student with id Not" + id + " found"));
+
+        return mapToResponse(studResp); //nhi toh map krdo DTO mein sidha
+    }
+
+
+    //  Optional<Student> stud = studentRepository.findById(id); // optional<Studnet> Yahan Student isliye hai kyunki Repository Entity ke saath kaam karta hai.
+//        if (stud.isEmpty()) {
+//            return null;
+//        }
+    //  return mapToResponse(stud.get());  //Matlab method ko StudentResponseDTO return karna hi padega.
+// }
+
+
+    public List<StudentResponseDTO> getAllStudent() {
+        List<Student> stud = studentRepository.findAll();
+
+        return stud.stream()
+                .map(this::mapToResponse)
+                .toList();  /////Student1 → mapToResponse() → ResponseDTO1
+        /////Student2 → mapToResponse() → ResponseDTO2
+        ////Student3 → mapToResponse() → ResponseDTO3
+    }
+
+
+    public updateStudentResponseDTO updateStudent(Long id, updateStudentRequestDTO updateStudentRequestDTO) {
+
+        Student existing = studentRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Student with id " + id + " Not Found"));
+
+//        if (existing.isEmpty()){
+//            return null;
+//        }
+
+
+        existing.setName(updateStudentRequestDTO.getName());
+        existing.setAge(updateStudentRequestDTO.getAge());
+        existing.setRoll(updateStudentRequestDTO.getRoll());
+
+        Student savedStudent = studentRepository.save(existing);
+
+        return mapToUpdateResponse(savedStudent);
+    }
+
+
+    public void deleteStudent(Long id) {
+
+        Student student = studentRepository
+                .findById(id)
+                .orElseThrow(() ->
+                        new ResourceNotFoundException("Student with id " + id + " Not Found"));
+
+        studentRepository.delete(student);
+
+//        if (!isStudent) {
+//            return false;
 //        }
 //
-//        return ResponseEntity.ok("Record Deleted");
+//        studentRepository.deleteById(Id);
+//
+//        return true;
 //    }
+
+        //ye 3 custom methods abhi class mein define nahi hain. Unko neeche banana padega.
+//    mapIntoStudent(studentRequestDTO)
+//    mapToResponse(stud)
+//    mapToUpdateResponse(savedStudent)
+        //jo data aa raha hai woh StudentRequestDTO mein hai, lekin database mein save karne ke liye hume Student chahiye.
+
+    }
+
+    private Student mapIntoStudent(StudentRequestDTO studentReqDto) {
+
+        Student student = new Student();
+
+        student.setName(studentReqDto.getName());
+        student.setAge(studentReqDto.getAge());
+        student.setRoll(studentReqDto.getRoll());
+
+        return student;
+    }
+
+    private StudentResponseDTO mapToResponse(Student student) {
+
+        StudentResponseDTO responseDto = new StudentResponseDTO();
+
+        responseDto.setName(student.getName());
+        responseDto.setAge(student.getAge());
+        responseDto.setRoll(student.getRoll());
+        student.setCreatedAt(LocalDateTime.now());
+        student.setUpdatedAt(LocalDateTime.now());
+        responseDto.setUpdatedAt(student.getUpdatedAt());
+        responseDto.setCreatedAt(student.getCreatedAt());
+
+        return responseDto;
+    }
+
+    private boolean rollExists(Student student) {
+        return studentRepository.existsByRoll(student.getRoll());
+    }
+
+    private updateStudentResponseDTO mapToUpdateResponse(Student student) {
+
+        updateStudentResponseDTO responseDto = new updateStudentResponseDTO();
+
+        responseDto.setAge(student.getAge());
+        responseDto.setRoll(student.getRoll());
+
+        responseDto.setUpdatedAt(student.getUpdatedAt().toLocalTime());
+
+        return responseDto;
+    }
 }
